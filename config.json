@@ -1,0 +1,21 @@
+{
+  "location": {
+    "name": "Allen, TX",
+    "lat": 33.116367,
+    "lon": -96.636758,
+    "elevation_m": 183
+  },
+  "satellites": [
+    {"name": "NOAA 15", "norad_id": 25338},
+    {"name": "NOAA 18", "norad_id": 28654},
+    {"name": "NOAA 19", "norad_id": 33591},
+    {"name": "METEOR-M 2-3", "norad_id": 57166}
+  ],
+  "settings": {
+    "min_elevation_deg": 10,
+    "forecast_hours": 24,
+    "tle_cache_hours": 6,
+    "pass_lookahead_hours": 24,
+    "refresh_interval_sec": 60
+  }
+}
