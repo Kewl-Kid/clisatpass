@@ -20,18 +20,25 @@ def tle_url(norad_id: int) -> str:
 def fetch_tle(norad_id: int, name: str) -> tuple[str, str] | None:
     """Fetch TLE lines from CelesTrak for a given NORAD ID."""
     import urllib.request
-    url = tle_url(norad_id)
-    try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            text = resp.read().decode("utf-8").strip()
-        lines = [l.strip() for l in text.splitlines() if l.strip()]
-        # lines[0] = name, lines[1] = TLE line 1, lines[2] = TLE line 2
-        if len(lines) >= 3:
-            return lines[1], lines[2]
-        elif len(lines) == 2:
-            return lines[0], lines[1]
-    except Exception as e:
-        return None
+
+    urls = [
+        tle_url(norad_id),
+        f"https://celestrak.org/NORAD/elements/gp.php?CATNR={norad_id}",
+    ]
+
+    for url in urls:
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                text = resp.read().decode("utf-8").strip()
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            # lines[0] = name, lines[1] = TLE line 1, lines[2] = TLE line 2
+            if len(lines) >= 3:
+                return lines[1], lines[2]
+            elif len(lines) == 2:
+                return lines[0], lines[1]
+        except Exception:
+            continue
+    return None
 
 def load_tle_cache(cache_file: str) -> dict:
     if os.path.exists(cache_file):

@@ -11,69 +11,94 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 def fetch_weather(lat: float, lon: float) -> dict | None:
     """
-    Fetch current + hourly forecast weather.
+    Fetch current + hourly forecast weather from Open-Meteo.
     Returns a dict with current conditions and hourly forecast list.
     """
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current": ",".join([
-            "temperature_2m",
-            "relative_humidity_2m",
-            "precipitation",
-            "weather_code",
-            "cloud_cover",
-            "wind_speed_10m",
-            "wind_gusts_10m",
-            "visibility",
-        ]),
+        "current_weather": "true",
         "hourly": ",".join([
-            "cloud_cover",
+            "cloudcover",
             "precipitation_probability",
             "precipitation",
             "visibility",
-            "relative_humidity_2m",
+            "relativehumidity_2m",
+            "temperature_2m",
+            "windspeed_10m",
+            "windgusts_10m",
+            "weathercode",
         ]),
         "wind_speed_unit": "mph",
         "temperature_unit": "fahrenheit",
-        "timezone": "America/Chicago",
+        "timezone": "auto",
         "forecast_days": 2,
     }
     url = OPEN_METEO_URL + "?" + urllib.parse.urlencode(params)
+
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         return _parse_weather(data)
-    except Exception as e:
+    except Exception:
         return None
 
+
 def _parse_weather(raw: dict) -> dict:
-    cur = raw.get("current", {})
+    cw = raw.get("current_weather", {})
     hourly = raw.get("hourly", {})
     times = hourly.get("time", [])
+
+    # If current_weather is not populated, attempt to infer from hourly at now
+    now = datetime.now(timezone.utc)
+    current_entry = None
+    if cw:
+        current_entry = {
+            "temp_f": cw.get("temperature"),
+            "humidity": hourly.get("relativehumidity_2m", [None])[0] if hourly.get("relativehumidity_2m") else None,
+            "precip_mm": hourly.get("precipitation", [None])[0] if hourly.get("precipitation") else None,
+            "weather_code": cw.get("weathercode"),
+            "cloud_cover": hourly.get("cloudcover", [None])[0] if hourly.get("cloudcover") else None,
+            "wind_mph": cw.get("windspeed"),
+            "gusts_mph": hourly.get("windgusts_10m", [None])[0] if hourly.get("windgusts_10m") else None,
+            "visibility_m": hourly.get("visibility", [None])[0] if hourly.get("visibility") else None,
+        }
+    else:
+        # Fallback to nearest hourly values
+        target = now.replace(minute=0, second=0, microsecond=0)
+        target_str = target.strftime("%Y-%m-%dT%H:00")
+        idx = None
+        for i, t in enumerate(times):
+            if t.startswith(target_str):
+                idx = i
+                break
+        if idx is None and times:
+            idx = 0
+        if idx is not None:
+            current_entry = {
+                "temp_f": hourly.get("temperature_2m", [None])[idx] if hourly.get("temperature_2m") else None,
+                "humidity": hourly.get("relativehumidity_2m", [None])[idx] if hourly.get("relativehumidity_2m") else None,
+                "precip_mm": hourly.get("precipitation", [None])[idx] if hourly.get("precipitation") else None,
+                "weather_code": hourly.get("weathercode", [None])[idx] if hourly.get("weathercode") else None,
+                "cloud_cover": hourly.get("cloudcover", [None])[idx] if hourly.get("cloudcover") else None,
+                "wind_mph": hourly.get("windspeed_10m", [None])[idx] if hourly.get("windspeed_10m") else None,
+                "gusts_mph": hourly.get("windgusts_10m", [None])[idx] if hourly.get("windgusts_10m") else None,
+                "visibility_m": hourly.get("visibility", [None])[idx] if hourly.get("visibility") else None,
+            }
 
     forecast = []
     for i, t in enumerate(times):
         forecast.append({
             "time": t,
-            "cloud_cover": hourly.get("cloud_cover", [None])[i],
+            "cloud_cover": hourly.get("cloudcover", [None])[i],
             "precip_prob": hourly.get("precipitation_probability", [None])[i],
             "precip_mm": hourly.get("precipitation", [None])[i],
             "visibility_m": hourly.get("visibility", [None])[i],
-            "humidity": hourly.get("relative_humidity_2m", [None])[i],
+            "humidity": hourly.get("relativehumidity_2m", [None])[i],
         })
 
     return {
-        "current": {
-            "temp_f": cur.get("temperature_2m"),
-            "humidity": cur.get("relative_humidity_2m"),
-            "precip_mm": cur.get("precipitation"),
-            "weather_code": cur.get("weather_code"),
-            "cloud_cover": cur.get("cloud_cover"),
-            "wind_mph": cur.get("wind_speed_10m"),
-            "gusts_mph": cur.get("wind_gusts_10m"),
-            "visibility_m": cur.get("visibility"),
-        },
+        "current": current_entry or {},
         "hourly": forecast,
     }
 

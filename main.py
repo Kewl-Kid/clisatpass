@@ -86,6 +86,7 @@ def fetch_all(config: dict, state: AppState):
     sats = config["satellites"]
     settings = config["settings"]
 
+    state.error = None
     state.status_msg = "Fetching TLEs..."
     all_passes = []
     for s in sats:
@@ -97,20 +98,24 @@ def fetch_all(config: dict, state: AppState):
                 min_elevation=settings["min_elevation_deg"],
                 cache_hours=settings["tle_cache_hours"]
             )
+            if not passes:
+                state.error = (state.error or "") + f"No passes for {s['name']}. "
             all_passes.extend(passes)
         except Exception as e:
+            state.error = (state.error or "") + f"Error fetching {s['name']}: {e}. "
             state.status_msg = f"Error fetching {s['name']}: {e}"
             time.sleep(1)
 
-    all_passes.sort(key=lambda p: p["aos"])
+    all_passes.sort(key=lambda p: p.get("aos", datetime.now(timezone.utc)))
 
     state.status_msg = "Fetching weather data..."
-    try:
-        wx = wx_mod.fetch_weather(loc["lat"], loc["lon"])
-        state.weather = wx
-    except Exception as e:
+    wx = wx_mod.fetch_weather(loc["lat"], loc["lon"])
+    if wx is None:
         state.weather = None
-        state.status_msg = f"Weather error: {e}"
+        state.error = (state.error or "") + "Weather fetch failed. "
+        state.status_msg = "Weather error: unable to retrieve weather data."
+    else:
+        state.weather = wx
 
     # Attach confidence scores to each pass
     state.status_msg = "Computing confidence scores..."
@@ -316,8 +321,11 @@ def draw_passes_view(win, state, start_row):
         return
 
     if not passes:
+        msg = "No passes found. Check config and internet connection."
+        if state.error:
+            msg = f"{msg} Details: {state.error.strip()}"
         safe_addstr(win, start_row + 2, 2,
-                    "No passes found. Check your config.json and internet connection.",
+                    msg,
                     curses.color_pair(C_GRADE_P))
         return
 
@@ -399,7 +407,10 @@ def draw_weather_view(win, state, start_row):
                 curses.color_pair(C_TITLE) | curses.A_BOLD)
 
     if state.loading or not wx:
-        safe_addstr(win, start_row + 2, 2, "Weather data not yet loaded...",
+        msg = "Weather data not yet loaded..."
+        if state.error:
+            msg = f"Weather unavailable: {state.error.strip()}"
+        safe_addstr(win, start_row + 2, 2, msg,
                     curses.color_pair(C_DIM))
         return
 
